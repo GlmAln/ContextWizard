@@ -4,6 +4,6 @@
     "probot": "^13.0.0"
   },
   "scripts": {
-    "start": "probot run ./src/index.ts"
+    "start": "probot run ./lib/index.js"
   }
 }
