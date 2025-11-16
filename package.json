@@ -1,5 +1,8 @@
 {
   "dependencies": {
     "@perplexity-ai/perplexity_ai": "^0.16.0"
+  },
+  "scripts": {
+    "start": "probot run ./src/index.ts"
   }
 }
