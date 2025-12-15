@@ -12,8 +12,8 @@
     "probot-app"
   ],
   "scripts": {
-    "build": "node --max-old-space-size=1024 ./node_modules/typescript/bin/tsc",
-    "start": "probot run ./lib/index.js",
+    "build": "tsc",
+    "start": "node --max-old-space-size=512 ./node_modules/.bin/probot run ./lib/index.js",
     "test": "vitest",
     "deploy": "npm run build && npm run start"
   },
