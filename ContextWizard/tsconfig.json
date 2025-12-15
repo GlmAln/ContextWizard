@@ -1,25 +1,21 @@
 {
   "compilerOptions": {
-    "incremental": true,
-    "target": "es2022",
+    "target": "ES2022",
     "module": "Node16",
-    "declaration": true,
-    "sourceMap": true,
     "outDir": "./lib",
-
-    /* Strict Type-Checking Options */
+    "rootDir": "./src",
     "strict": true,
-
-    /* Additional Checks */
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-
-    "moduleResolution": "Node16",
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Node16",
+    "resolveJsonModule": true
   },
-  "include": ["src/"],
-  "compileOnSave": false
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "lib"
+  ]
 }

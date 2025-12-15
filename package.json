@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@google/genai": "^1.33.0",
     "@perplexity-ai/perplexity_ai": "^0.16.0",
     "probot": "^13.0.0"
   },
