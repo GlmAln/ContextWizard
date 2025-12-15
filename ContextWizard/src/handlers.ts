@@ -1,12 +1,11 @@
-// src/handlers.ts
-
 import { Probot } from "probot";
-import { gatherContext } from "./context-gatherer.js";
-import { improveComment, postImprovedComment, summarizeReview } from "./core-logic.js";
-import { CommentData, ReviewData } from "./types.js";
+import { gatherContext, getPullRequestDiff } from "./context-gatherer.js";
+import { improveComment, postImprovedComment, summarizeReview, generateCandidateReviews } from "./core-logic.js";
+import { CommentData, ReviewData, CandidateReviewComment } from "./types.js";
 
 const triggerCommand = '/improve';
 const summarizeCommand = "/summarize";
+const wizardReviewCommand = "/wizard-review";
 
 async function handleReviewCommentCreated(context: any) {
     console.log("🔔 Pull request review comment created event received");
@@ -23,15 +22,18 @@ async function handleReviewCommentCreated(context: any) {
     try {
         console.log(`Command '${triggerCommand}' detected. Starting processing...`);
 
+        // Nettoyer la commande pour ne pas la transmettre au LLM
         const cleanedBody = comment.body.replace(new RegExp(triggerCommand, 'gi'), '').trim();
 
         console.log("📥 Fetching complete context...");
+        // gatherContext inclut la logique pour FR3.2 (Documentation)
         const completeContext = await gatherContext(context, cleanedBody);
 
         console.log("🧠 Sending to AI for improvement...");
         const improvedComment = await improveComment(completeContext);
 
         console.log("📤 Posting improved comment to GitHub...");
+        // FR4.2: Le bot poste une suggestion, l'utilisateur doit accepter/éditer
         const success = await postImprovedComment(
             context,
             improvedComment,
@@ -57,6 +59,7 @@ async function handleReviewSubmitted(context: any) {
     }
 
     try {
+        // FR6.1: Le système offre de générer un résumé après une revue complète
         const summaryOfferBody = `🤖 **ContextWizard Summary Offer**
 The review by @${review.user.login} has been submitted. Would you like me to generate a concise summary of the key points and required changes?
 
@@ -77,21 +80,36 @@ Type \`${summarizeCommand}\` in a new general PR comment to get the AI-generated
 }
 
 async function handleIssueCommentCreated(context: any) {
-    const { comment, issue, pull_request } = context.payload;
+    const { comment, issue } = context.payload;
+
+    console.log(`💬 Issue comment created for #${issue.number}. Body starts with: ${comment.body.substring(0, 30)}...`);
+
+    // Vérifie si le commentaire est sur une Pull Request
     if (!issue.pull_request) {
+        console.log("⏭️ Skipping issue comment: not linked to a PR.");
         return;
     }
 
-    if (comment.body.toLowerCase().includes(summarizeCommand)) {
-        if (comment.user.type === "Bot" || comment.body.includes("🤖")) {
-            console.log("⏭️ Skipping comment from bot.");
-            return;
-        }
+    if (comment.user.type === "Bot" || comment.body.includes("🤖")) {
+        console.log("⏭️ Skipping comment from bot.");
+        return;
+    }
 
-        console.log(`🤖 Command '${summarizeCommand}' detected on PR #${issue.number}. Starting summary generation.`);
+    const body = comment.body.toLowerCase();
+    const prNumber = issue.number;
+
+    // --- 1. Gérer la commande /summarize (FR6) ---
+    if (body.includes(summarizeCommand)) {
+        console.log(`🤖 Command '${summarizeCommand}' detected on PR #${prNumber}. Starting summary generation.`);
 
         try {
-            const prNumber = issue.number;
+            // Correction: Fetcher la PR complète car 'pull_request' n'est pas complet dans ce payload
+            const prResponse = await context.octokit.pulls.get(
+                context.repo({ pull_number: prNumber })
+            );
+            const prDetails = prResponse.data;
+
+            // Récupération de toutes les données nécessaires
             const allReviews = await context.octokit.pulls.listReviews(
                 context.repo({ pull_number: prNumber })
             );
@@ -116,14 +134,17 @@ async function handleIssueCommentCreated(context: any) {
             }));
 
             const prContext = {
-                number: pull_request.number,
-                title: pull_request.title,
-                description: pull_request.body,
-                author: pull_request.user.login,
-                baseBranch: pull_request.base.ref,
-                headBranch: pull_request.head.ref,
+                number: prDetails.number,
+                title: prDetails.title,
+                description: prDetails.body,
+                author: prDetails.user.login,
+                baseBranch: prDetails.base.ref,
+                headBranch: prDetails.head.ref,
             } as any;
+
+            // Appel au LLM pour la synthèse (FR6.2)
             const summary = await summarizeReview(prContext, reviewsData, commentsData);
+
             const summaryBody = `🤖 **ContextWizard Review Summary**
 Generated for PR #${prNumber} at the request of @${comment.user.login}.
 
@@ -145,12 +166,76 @@ ${summary}
             console.error("❌ Error processing /summarize command:", error);
             await context.octokit.issues.createComment(
                 context.issue({
-                    body: `❌ **ContextWizard Error**\nI encountered an error while trying to generate the summary: \`${error.message}\``
+                    body: `❌ **ContextWizard Error**\nI encountered an error while trying to generate the summary: \`${error.message}\`. Please check logs.`
+                })
+            );
+        }
+    }
+    // --- 2. Gérer la commande /wizard-review (FR5) ---
+    else if (body.includes(wizardReviewCommand)) {
+
+        console.log(`🧙 Command '${wizardReviewCommand}' detected on PR #${prNumber}. Starting candidate generation.`);
+
+        try {
+            // Récupérer les détails complets de la PR
+            const prResponse = await context.octokit.pulls.get(
+                context.repo({ pull_number: prNumber })
+            );
+            const prDetails = prResponse.data;
+
+            // Récupérer le diff complet de la PR
+            const fullDiff = await getPullRequestDiff(context, prNumber);
+
+            // Créer l'objet PR Context
+            const prContext = {
+                number: prDetails.number,
+                title: prDetails.title,
+                description: prDetails.body,
+                author: prDetails.user.login,
+                baseBranch: prDetails.base.ref,
+                headBranch: prDetails.head.ref,
+            } as any;
+
+            // Générer les commentaires candidats (FR5.2)
+            const candidates = await generateCandidateReviews(prContext, fullDiff);
+
+            // --- Post du Résultat (FR5.3) ---
+            let output = `## 🧙 ContextWizard Review Suggestions
+Generated for PR #${prNumber} at the request of @${comment.user.login}.
+
+Here are ${candidates.length} potential review comments based on analyzing the PR diff. **The system shall never post them automatically.** Review them, and if they are valid, post them as inline comments!
+
+| File:Line | Category | Title | Suggested Action (Excerpt) |\n| :--- | :--- | :--- | :--- |\n`;
+
+            candidates.forEach((c: CandidateReviewComment) => {
+                // Échapper les barres verticales et limiter la longueur pour le tableau
+                const escapedDescription = c.description.replace(/\|/g, '\\|').replace(/\n/g, ' ').substring(0, 100) + '...';
+                output += `| \`${c.path}:${c.line}\` | **${c.technicalCategory}** | ${c.title} | ${escapedDescription} |\n`;
+            });
+
+            output += `\n---
+*To post one of these suggestions, copy the full content of the \`description\` and post it as an inline comment at the specified line number (\`File:Line\`).*`;
+
+            await context.octokit.issues.createComment(
+                context.issue({
+                    issue_number: prNumber,
+                    body: output,
+                })
+            );
+
+            console.log(`✅ Candidate review comments posted successfully for PR #${prNumber}.`);
+
+        } catch (error: any) {
+            console.error("❌ Error processing /wizard-review command:", error);
+            await context.octokit.issues.createComment(
+                context.issue({
+                    body: `❌ **ContextWizard Error**\nI encountered an error while generating wizard suggestions: \`${error.message}\`. This often occurs when the diff is too large or the AI fails to generate valid JSON. Please check logs.`
                 })
             );
         }
     }
 }
+
 export const setupHandlers = (app: Probot) => {
     app.on("pull_request_review_comment.created", handleReviewCommentCreated);
     app.on("pull_request_review.submitted", handleReviewSubmitted);

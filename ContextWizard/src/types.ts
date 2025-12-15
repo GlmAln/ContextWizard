@@ -75,3 +75,11 @@ export interface CommentData {
     path: string;
     line: number | null;
 }
+
+export interface CandidateReviewComment {
+    path: string;
+    line: number;
+    title: string;
+    description: string;
+    technicalCategory: 'Performance' | 'Security' | 'Maintainability' | 'Style' | 'Bug Potential';
+}

@@ -1,4 +1,4 @@
-import { CommentData, CompleteContext, PullRequestContext, ReviewData, } from "./types.js";
+import { CandidateReviewComment, CommentData, CompleteContext, PullRequestContext, ReviewData, } from "./types.js";
 import { callPerplexityAPI, callGeminiAPI, LLM_PROVIDER } from './llm-clients.js';
 
 function buildSystemPrompt(context: CompleteContext): string {
@@ -196,5 +196,71 @@ export async function summarizeReview(
     } catch (error) {
         console.error(`Error calling LLM provider (${LLM_PROVIDER}) for summary:`, error);
         throw error;
+    }
+}
+
+export async function generateCandidateReviews(
+    prContext: PullRequestContext,
+    fullDiff: string
+): Promise<CandidateReviewComment[]> {
+    const systemPrompt = `You are a static analysis tool integrated with a Code Review AI, specialized in finding subtle issues in a diff.
+
+Your task is to analyze the provided Git diff for a Pull Request and identify 3 to 5 high-value issues (bugs, performance bottlenecks, maintainability risks, security concerns, or poor style).
+
+# CONTEXT
+PR Title: ${prContext.title}
+PR Author: ${prContext.author}
+Target Branch: ${prContext.baseBranch}
+
+# DIFF TO ANALYZE
+\`\`\`diff
+${fullDiff}
+\`\`\`
+
+# INSTRUCTIONS
+1. Analyze the diff and find significant issues.
+2. For each issue, identify the exact file (\`path\`) and the most relevant line number (\`line\`) where the issue occurs in the new code.
+3. Your final output MUST be a JSON array that strictly conforms to the TypeScript interface CandidateReviewComment.
+4. DO NOT include any text, markdown, or explanation outside of the JSON block.
+
+JSON Structure Interface:
+interface CandidateReviewComment {
+    path: string;
+    line: number;
+    title: string;
+    description: string;
+    technicalCategory: 'Performance' | 'Security' | 'Maintainability' | 'Style' | 'Bug Potential';
+}
+
+The resulting JSON array must be parsable without errors.`;
+
+    const userPrompt = "Analyze the diff and generate the JSON array of candidate review comments now.";
+
+    console.log("🧠 Sending full diff to AI for candidate review generation... (" + LLM_PROVIDER + ")");
+
+    let rawResponse: string;
+    try {
+        rawResponse = await callGeminiAPI(systemPrompt, userPrompt);
+    } catch (error) {
+        console.warn(`Gemini failed or is unavailable for JSON generation. Falling back to Perplexity.`);
+        rawResponse = await callPerplexityAPI(systemPrompt, userPrompt);
+    }
+
+    try {
+        const jsonMatch = rawResponse.match(/```json\n([\s\S]*?)\n```/i) || rawResponse.match(/\[[\s\S]*?\]/);
+
+        let jsonString = jsonMatch ? jsonMatch[1] || jsonMatch[0] : rawResponse;
+
+        jsonString = jsonString.trim();
+        if (!jsonString.startsWith('[')) jsonString = '[' + jsonString;
+        if (!jsonString.endsWith(']')) jsonString = jsonString + ']';
+
+        const candidates: CandidateReviewComment[] = JSON.parse(jsonString);
+        console.log(`✅ Successfully parsed ${candidates.length} candidate comments.`);
+        return candidates;
+
+    } catch (e) {
+        console.error("Error parsing JSON response from LLM:", e);
+        throw new Error("AI returned a non-parsable JSON structure for candidate comments. Raw: " + rawResponse.substring(0, 200) + '...');
     }
 }

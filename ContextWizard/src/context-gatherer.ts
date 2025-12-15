@@ -1,5 +1,7 @@
 import { CompleteContext, ReviewComment, ProjectContext, PullRequestContext } from './types.js';
-type ProbotEventContext = any;
+import { Context } from 'probot';
+
+type ProbotEventContext = Context<any>;
 
 async function getPackageJson(context: ProbotEventContext, headRef: string): Promise<any> {
     try {
@@ -35,7 +37,7 @@ async function getLinkedIssues(context: ProbotEventContext, prBody: string | nul
                 linkedIssues.push({
                     number: issue.data.number,
                     title: issue.data.title,
-                    body: issue.data.body,
+                    body: issue.data.body || "",
                     labels: issue.data.labels,
                 });
             } catch (error) {
@@ -136,4 +138,37 @@ export async function gatherContext(context: ProbotEventContext, cleanedCommentB
             },
         },
     };
+}
+
+export async function getPullRequestDiff(context: any, prNumber: number): Promise<string> {
+    try {
+        const response = await context.octokit.pulls.get(
+            context.repo({
+                pull_number: prNumber,
+                headers: {
+                    accept: 'application/vnd.github.v3.diff',
+                },
+            })
+        );
+
+        if (typeof response.data === 'string' && response.data.length > 50) {
+            return response.data.slice(0, 15000);
+        }
+
+        if (response.status === 200 && response.data) {
+            console.warn("PR Diff retrieved, but not as a string. Check GitHub App permissions.");
+            const files = await context.octokit.pulls.listFiles(context.repo({ pull_number: prNumber }));
+            const combinedDiff = files.data.map((f: any) => f.patch || '').join('\n');
+
+            if (combinedDiff.length > 50) {
+                console.log("Successfully combined diff from file patches.");
+                return combinedDiff.slice(0, 15000);
+            }
+        }
+
+    } catch (error) {
+        console.error("Critical error fetching PR diff:", error);
+    }
+
+    return "Diff not available.";
 }
