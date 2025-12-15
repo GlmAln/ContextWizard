@@ -12,20 +12,20 @@
     "probot-app"
   ],
   "scripts": {
-    "build": "tsc",
-    "start": "probot run ./lib/index.js",
+    "build": "echo 'Using pre-compiled code'",
+    "start": "node --max-old-space-size=512 ./node_modules/.bin/probot run ./lib/index.js",
     "test": "vitest",
-    "deploy": "npm run build && npm run start"
+    "deploy": "npm run start"
   },
   "dependencies": {
     "@google/genai": "^1.33.0",
-    "probot": "^13.4.5",
-    "typescript": "^5.8.3"
+    "probot": "^13.4.5"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "nock": "^14.0.5",
     "smee-client": "^2.0.0",
+    "typescript": "^5.8.3",
     "vitest": "^2.0.0"
   },
   "overrides": {
