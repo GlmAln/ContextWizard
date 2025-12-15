@@ -83,3 +83,13 @@ export interface CandidateReviewComment {
     description: string;
     technicalCategory: 'Performance' | 'Security' | 'Maintainability' | 'Style' | 'Bug Potential';
 }
+
+export type CommentCategory = 'praise' | 'question' | 'change' | 'ambiguous';
+export type ActionType = 'suggest_code' | 'clarify' | 'clarify_suggest_code' | 'do_nothing';
+
+export interface CategorizedAction {
+    category: CommentCategory;
+    isClear: boolean;
+    action: ActionType;
+    explanation: string;
+}

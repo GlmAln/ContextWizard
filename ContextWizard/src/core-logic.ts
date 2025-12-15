@@ -1,5 +1,38 @@
-import { CandidateReviewComment, CommentData, CompleteContext, PullRequestContext, ReviewData, } from "./types.js";
+import { CandidateReviewComment, CategorizedAction, CommentData, CompleteContext, PullRequestContext, ReviewData, } from "./types.js";
 import { callPerplexityAPI, callGeminiAPI, LLM_PROVIDER } from './llm-clients.js';
+
+export async function classifyComment(context: CompleteContext): Promise<CategorizedAction> {
+    const triggerComment = context.triggerComment;
+    const systemPrompt = `You are an AI code review triage expert. Analyze the following human review comment based on the full context provided.
+
+# Comment to Analyze: "${triggerComment.body}"
+
+# Task:
+1. Categorize the comment into one of: 'praise', 'question', 'change', or 'ambiguous'.
+2. If the category is 'question' or 'change', determine if the comment is 'clear and actionable' (isClear: true) or 'vague/ambiguous' (isClear: false).
+3. Determine the required action based on the categorization and clarity.
+
+# Instructions for JSON Output:
+Your response MUST be ONLY a JSON object conforming to the CategorizedAction interface.
+interface CategorizedAction {
+    category: 'praise' | 'question' | 'change' | 'ambiguous';
+    isClear: boolean;
+    action: 'suggest_code' | 'clarify' | 'clarify_suggest_code' | 'do_nothing';
+    explanation: string;
+}
+
+Action Mapping:
+- Praise/Ambiguous: action must be 'do_nothing'.
+- Change (Clear): action must be 'suggest_code' (propose example code).
+- Change (Ambiguous): action must be 'clarify_suggest_code' (rewrite + suggest code).
+- Question (Clear): action must be 'do_nothing'.
+- Question (Ambiguous): action must be 'clarify' (rewrite the question).
+`;
+
+    const rawResponse = await callGeminiAPI(systemPrompt, "Categorize and determine the action now.");
+
+    return JSON.parse(rawResponse) as CategorizedAction;
+}
 
 function buildSystemPrompt(context: CompleteContext): string {
     const projectContext = context.project;
