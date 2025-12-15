@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "echo 'Using pre-compiled code from lib/'",
-    "start": "node --max-old-space-size=512 ./node_modules/.bin/probot run ./lib/index.js",
+    "start": "npx probot run ./lib/index.js",
     "test": "vitest",
     "deploy": "npm run start",
     "compile": "tsc"
