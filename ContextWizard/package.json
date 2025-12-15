@@ -14,7 +14,8 @@
   "scripts": {
     "build": "tsc",
     "start": "probot run ./lib/index.js",
-    "test": "vitest"
+    "test": "vitest",
+    "deploy": "npm run build && npm run start"
   },
   "dependencies": {
     "@google/genai": "^1.33.0",
